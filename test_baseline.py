@@ -68,10 +68,9 @@ def run_zeroshot_evaluation():
         if img_rel_path not in full_anno: continue
         img_full_path = os.path.join(DATASET_ROOT, img_rel_path)
         
-        try:
-            raw_image = Image.open(img_full_path).convert("RGB")
+        raw_image = Image.open(img_full_path).convert("RGB")
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             inference_state = sam_proc.set_image(raw_image)
-        except: continue
 
         img_anno = full_anno[img_rel_path]
         
@@ -81,7 +80,8 @@ def run_zeroshot_evaluation():
             gt_count = len(details.get('points', []))
             
             # SAM3 Region Proposal
-            output = sam_proc.set_text_prompt(state=inference_state, prompt=base_class)
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                output = sam_proc.set_text_prompt(state=inference_state, prompt=base_class)
             boxes = output["boxes"]
             if boxes is None or len(boxes) == 0:
                 errors.append(gt_count) # 0개 예측한 셈

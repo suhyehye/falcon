@@ -160,10 +160,9 @@ class SAMCropDataset(Dataset):
             img_full_path = os.path.join(DATASET_ROOT, img_rel_path)
             if not os.path.exists(img_full_path): continue
 
-            try:
-                raw_image = Image.open(img_full_path).convert("RGB")
+            raw_image = Image.open(img_full_path).convert("RGB")
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 inference_state = sam_processor.set_image(raw_image)
-            except: continue
 
             anno = full_anno[img_rel_path]
             img_groups = defaultdict(list)
@@ -174,7 +173,8 @@ class SAMCropDataset(Dataset):
 
             matched_points_tracker = set()
             for base_cls, sub_groups in img_groups.items():
-                output = sam_processor.set_text_prompt(state=inference_state, prompt=base_cls)
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    output = sam_processor.set_text_prompt(state=inference_state, prompt=base_cls)
                 boxes = output["boxes"]
                 if boxes is None or len(boxes) == 0: continue
 
@@ -221,8 +221,9 @@ class SAMCropDataset(Dataset):
 # SAM3 crop 유틸 (테스트용)
 # ==========================================
 def get_crops_from_image(raw_image, sam_proc, base_cls):
-    inference_state = sam_proc.set_image(raw_image)
-    output = sam_proc.set_text_prompt(state=inference_state, prompt=base_cls)
+    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        inference_state = sam_proc.set_image(raw_image)
+        output = sam_proc.set_text_prompt(state=inference_state, prompt=base_cls)
     boxes = output["boxes"]
     if boxes is None or len(boxes) == 0: return []
 
