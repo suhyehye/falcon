@@ -58,8 +58,8 @@ FALCON tackles the challenge of **counting objects by referring expressions** in
 
 ```bash
 # Clone the repository
-git clone https://github.com/suhyehye/FALCON.git
-cd FALCON
+git clone https://github.com/suhyehye/falcon.git
+cd falcon
 
 # Create conda environment
 conda create -n falcon python=3.12 -y
