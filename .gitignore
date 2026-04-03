@@ -1,14 +1,12 @@
 __pycache__/
 *.pyc
 .DS_Store
-EOF
 
 /checkpoints
 /coop_result
 
 *.pth
 *.pt
-*.json
-*.png
-*.jpg
-*.jpeg
+
+sam3.egg-info/
+sam3/sam3.egg-info/

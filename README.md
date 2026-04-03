@@ -1,117 +1,170 @@
-# CoOp Fine-tuning with PE-Core bigG/14 + SAM3
+<div align="center">
 
-Context Optimization (CoOp) 기반의 referring-expression counting 파이프라인.
-SAM3로 객체를 탐지하고, PE-Core (ViT-bigG/14-448) 의 텍스트 임베딩에 learnable context vector를 삽입하여 referring-expression 분류 성능을 향상시킵니다.
+# FALCON
 
-## Pipeline
+### Fine-grained Alignment for Counting Objects in Industry
+
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![PyTorch 2.9](https://img.shields.io/badge/PyTorch-2.9-ee4c2c.svg)](https://pytorch.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+A two-stage referring-expression counting pipeline that combines **SAM3** for text-prompted object detection with **PE-Core + CoOp** for fine-grained attribute classification.
+
+[Getting Started](#getting-started) &bull; [Usage](#usage) &bull; [Results](#results) &bull; [Model Architecture](#model-architecture)
+
+</div>
+
+---
+
+## Overview
+
+FALCON tackles the challenge of **counting objects by referring expressions** in industrial inspection scenarios. Given an image and a natural language expression (e.g., *"crushed blue cuboid potentiometer"*), the model detects and counts all matching instances.
+
+<details>
+<summary><b>Pipeline</b></summary>
 
 ```
-Input Image
-    |
-    v
-[SAM3] -- base_cls text prompt --> 후보 박스 탐지
-    |
-    v
-NMS 필터링 --> 개별 크롭 추출
-    |
-    v
-[PE-Core + CoOp] -- learnable ctx + class name --> 크롭 분류
-    |
-    v
-ref_exp 별 카운팅 --> MAE / RMSE 평가
+                        Input Image
+                            |
+                            v
+                +-----------------------+
+                |        SAM3           |  text prompt: base class name
+                |  (Object Detection)   |  e.g., "blue cuboid potentiometer"
+                +-----------------------+
+                            |
+                            v
+                   NMS Filtering + Crop
+                            |
+                            v
+                +-----------------------+
+                |   PE-Core + CoOp      |  learnable context vectors
+                |  (Attribute Classify)  |  e.g., "normal" vs "crushed"
+                +-----------------------+
+                            |
+                            v
+              Per-expression Count --> MAE / RMSE
 ```
 
-## Structure
+</details>
 
-```
-coop-pe-core/
-├── README.md
-├── requirements.txt
-├── train_coop.py          # CoOp 학습 (SAM3 crop + PE-Core 분류)
-├── test_coop.py           # CoOp 학습 후 테스트 (MAE/RMSE + 시각화)
-├── test_baseline.py       # CoOp 없이 zero-shot PE-Core baseline 테스트
-├── ablation_vectors.py    # Learnable context vector 수 ablation (n_ctx=2,8)
-└── checkpoints/
-    └── sam3.pt            # SAM3 checkpoint (3.3GB)
-```
+## Getting Started
 
-## Environment Setup
+### Prerequisites
+
+- CUDA-compatible GPU
+- Conda (Miniconda or Anaconda)
+
+### Installation
 
 ```bash
-conda create -n coop-pe-core python=3.12 -y
-conda activate coop-pe-core
+# Clone the repository
+git clone https://github.com/suhyehye/FALCON.git
+cd FALCON
+
+# Create conda environment
+conda create -n falcon python=3.12 -y
+conda activate falcon
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Install SAM3 module
+cd sam3 && pip install -e . && cd ..
 ```
 
-SAM3 모듈 설치 (프로젝트 폴더 밖에서 clone):
+### Data Preparation
 
-```bash
-cd ..
-git clone https://github.com/facebookresearch/sam3.git
-cd sam3
-pip install -e .
-cd ../coop-pe-core
+```
+../dataset/ioc/
+├── anno/
+│   ├── annotations.json      # Per-image point annotations with ref expressions
+│   └── split_config.json     # Train / test split
+└── <class_name>/
+    └── *.jpg
 ```
 
-**주의**: `coop-pe-core/` 폴더 안에 `sam3`라는 이름의 디렉토리가 있으면 Python namespace가 충돌하여 import가 실패합니다. SAM3 repo는 반드시 프로젝트 폴더 밖에 clone하세요.
+Place the SAM3 checkpoint at `checkpoints/sam3.pt`.
 
-### Tested Versions
+### Dependencies
 
-- Python 3.12.12
-- PyTorch 2.9.1+cu128
-- open_clip_torch 3.2.0
-- timm 1.0.24
-
-## Data
-
-- IoC dataset: `../dataset/ioc/`
-  - `anno/annotations.json`
-  - `anno/split_config.json`
-- SAM3 checkpoint: `checkpoints/sam3.pt` 
+| Package | Version |
+|---------|---------|
+| Python | 3.12 |
+| PyTorch | 2.9.1+cu128 |
+| open_clip_torch | 3.2.0 |
+| timm | 1.0.24 |
 
 ## Usage
 
-### 1. Baseline (Zero-shot PE-Core, CoOp 없음)
+### 1. Train CoOp
 
-```bash
-python test_baseline.py
-```
-
-### 2. CoOp 학습
+Fine-tune learnable context vectors on the training split:
 
 ```bash
 python train_coop.py
 ```
 
-- 학습된 ctx 벡터: `checkpoints/coop_language_guided/coop_language_guided_model.pth`
-- 클래스 목록: `checkpoints/coop_language_guided/classes.json`
+Outputs:
+- Context vectors: `checkpoints/coop_language_guided/coop_language_guided_model.pth`
+- Class list: `checkpoints/coop_language_guided/classes.json`
 
-### 3. CoOp 테스트 (MAE/RMSE + 시각화)
+### 2. Evaluate
 
 ```bash
+# CoOp (fine-tuned)
 python test_coop.py
+
+# Zero-shot baseline (no CoOp)
+python test_baseline.py
 ```
 
-- 시각화 결과: `coop_result/<class_name>/<image_name>/<ref_exp>.jpg`
+Visualization results are saved to `coop_result/<class_name>/<image_name>/<ref_exp>.jpg`.
 
-### 4. Ablation Study (context vector 수)
+### 3. Ablation Study
+
+Compare performance across different numbers of learnable context vectors:
 
 ```bash
 python ablation_vectors.py
 ```
 
-learnable context vector 수(n_ctx)에 따른 성능 비교:
+## Results
 
-| n_ctx | MAE  | RMSE |
-|-------|------|------|
-| 2     | 2.00 | 4.58 |
-| 4     | 1.80 | 4.49 |
-| 8     | 6.29 | 9.25 |
+### Context Vector Ablation (`n_ctx`)
 
-## Model
+| n_ctx | MAE | RMSE |
+|:-----:|:----:|:-----:|
+| 2 | 2.00 | 4.58 |
+| **4** | **1.80** | **4.49** |
+| 8 | 6.29 | 9.25 |
 
-- **Vision encoder**: PE-Core ViT-bigG/14-448 (`hf-hub:timm/PE-Core-bigG-14-448`)
-- **Object detector**: SAM3 (text-prompted segmentation)
-- **CoOp**: 4 learnable context vectors (default), dim=1280
-- **Optimizer**: SGD (lr=0.002, momentum=0.9)
-- **Epochs**: 10
+## Model Architecture
+
+| Component | Details |
+|-----------|---------|
+| **Vision Encoder** | PE-Core ViT-bigG/14-448 (`hf-hub:timm/PE-Core-bigG-14-448`) |
+| **Object Detector** | SAM3 (text-prompted grounding + segmentation) |
+| **Prompt Tuning** | CoOp — 4 learnable context vectors, dim=1280 |
+| **Optimizer** | SGD (lr=0.002, momentum=0.9, weight_decay=5e-4) |
+| **Scheduler** | Cosine Annealing |
+| **Epochs** | 10 |
+
+## Project Structure
+
+```
+FALCON/
+├── train_coop.py          # CoOp training (SAM3 crop + PE-Core classification)
+├── test_coop.py           # Evaluation with CoOp (MAE/RMSE + visualization)
+├── test_baseline.py       # Zero-shot PE-Core baseline evaluation
+├── ablation_vectors.py    # Context vector count ablation (n_ctx = 2, 4, 8)
+├── requirements.txt
+├── sam3/                  # SAM3 module (text-prompted detection)
+└── checkpoints/
+    └── sam3.pt            # SAM3 checkpoint
+```
+
+## Acknowledgements
+
+- [SAM3](https://github.com/facebookresearch/sam3) — Segment Anything Model 3 by Meta AI
+- [PE-Core](https://github.com/baaivision/PE-Core) — Parameter-Efficient Core for Vision-Language Models
+- [CoOp](https://github.com/KaiyangZhou/CoOp) — Learning to Prompt for Vision-Language Models
